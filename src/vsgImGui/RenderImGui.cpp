@@ -26,9 +26,11 @@ CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 
 #include "../imgui/backends/imgui_impl_vulkan.h"
 
-#include <vsg/vk/SubmitCommands.h>
-#include <vsg/vk/State.h>
 #include <vsg/io/Logger.h>
+#include <vsg/vk/State.h>
+#include <vsg/vk/SubmitCommands.h>
+
+#include <iostream>
 
 using namespace vsgImGui;
 
@@ -44,8 +46,8 @@ namespace vsgImGui
     class ImGuiNode : public vsg::Inherit<vsg::Node, ImGuiNode>
     {
     public:
-
-        ImGuiNode(RenderImGui::LegacyFunction in_func) : func(in_func) {}
+        ImGuiNode(RenderImGui::LegacyFunction in_func) :
+            func(in_func) {}
 
         RenderImGui::LegacyFunction func;
 
@@ -55,7 +57,16 @@ namespace vsgImGui
         }
     };
 
-} // namespace
+} // namespace vsgImGui
+
+static int ImGui_ImplVSG_CreateVkSurface(ImGuiViewport* viewport,
+                                         ImU64 vk_instance,
+                                         const void* vk_allocator,
+                                         ImU64* out_vk_surface)
+{
+
+    return 0;
+}
 
 RenderImGui::RenderImGui(const vsg::ref_ptr<vsg::Window>& window, bool useClearAttachments)
 {
@@ -64,9 +75,9 @@ RenderImGui::RenderImGui(const vsg::ref_ptr<vsg::Window>& window, bool useClearA
 }
 
 RenderImGui::RenderImGui(vsg::ref_ptr<vsg::Device> device, uint32_t queueFamily,
-            vsg::ref_ptr<vsg::RenderPass> renderPass,
-            uint32_t minImageCount, uint32_t imageCount,
-            VkExtent2D imageSize, bool useClearAttachments)
+                         vsg::ref_ptr<vsg::RenderPass> renderPass,
+                         uint32_t minImageCount, uint32_t imageCount,
+                         VkExtent2D imageSize, bool useClearAttachments)
 {
     _init(device, queueFamily, renderPass, minImageCount, imageCount, imageSize, useClearAttachments);
     _uploadFonts();
@@ -122,7 +133,7 @@ void RenderImGui::_init(
     ImPlot::CreateContext();
 
     VkSampleCountFlagBits samples = VK_SAMPLE_COUNT_1_BIT;
-    for(auto& attachment : renderPass->attachments)
+    for (auto& attachment : renderPass->attachments)
     {
         if (attachment.samples > samples) samples = attachment.samples;
     }
@@ -131,8 +142,13 @@ void RenderImGui::_init(
     // size is set to something, to prevent assertions
     // in ImGui::newFrame.
     ImGuiIO& io = ImGui::GetIO();
+    // add enable docking for docking branch
+    io.ConfigFlags |= ImGuiConfigFlags_DockingEnable;   // Enable Docking
+    io.ConfigFlags |= ImGuiConfigFlags_ViewportsEnable; // Enable Multi-Viewport / Platform Windows
+    ImGuiPlatformIO& platform_io = ImGui::GetPlatformIO();
     io.DisplaySize.x = imageSize.width;
     io.DisplaySize.y = imageSize.height;
+    platform_io.Platform_CreateVkSurface = ImGui_ImplVSG_CreateVkSurface;
 
     ImGui::StyleColorsDark();
 
@@ -145,7 +161,7 @@ void RenderImGui::_init(
     init_info.PhysicalDevice = *(_device->getPhysicalDevice());
     init_info.Device = *(_device);
     init_info.QueueFamily = _queueFamily;
-    init_info.Queue = *(_queue);  // ImGui doesn't use the queue so we shouldn't need to assign it, but it has an IM_ASSERT requiring it during debug build.
+    init_info.Queue = *(_queue); // ImGui doesn't use the queue so we shouldn't need to assign it, but it has an IM_ASSERT requiring it during debug build.
     init_info.PipelineCache = VK_NULL_HANDLE;
     init_info.MSAASamples = samples;
 
@@ -191,13 +207,12 @@ void RenderImGui::_uploadFonts()
     auto fence = vsg::Fence::create(_device);
 
     uint64_t timeout = 1000000000;
-    vsg::submitCommandsToQueue(commandPool, fence, timeout, _queue, [&](vsg::CommandBuffer& commandBuffer)
-    {
+    vsg::submitCommandsToQueue(commandPool, fence, timeout, _queue, [&](vsg::CommandBuffer& commandBuffer) {
         ImGui_ImplVulkan_CreateFontsTexture(commandBuffer);
     });
 
     VkResult result = fence->status();
-    while(result == VK_NOT_READY)
+    while (result == VK_NOT_READY)
     {
         result = fence->wait(timeout);
     }
